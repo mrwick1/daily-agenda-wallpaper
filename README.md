@@ -1,11 +1,11 @@
 # daily-agenda-wallpaper
 
 A self-updating desktop wallpaper that renders **today's tasks, a live quote, and a
-month calendar** as a designed poster — regenerated at login and every 30 minutes.
+month calendar** as a designed poster, regenerated at login and every 30 minutes.
 
 ![Rendered daily-agenda poster](docs/demo.png)
 
-> Personal desktop tool for **Arch Linux + Hyprland**. Not a cross-platform app — it
+> Personal desktop tool for **Arch Linux + Hyprland**. Not a cross-platform app; it
 > hooks directly into a Wayland wallpaper daemon. Shared as a portfolio/reference piece;
 > the interesting parts (the render pipeline and the quote system) are portable ideas.
 
@@ -14,7 +14,7 @@ month calendar** as a designed poster — regenerated at login and every 30 minu
 - Reads a plain `today-tasks.txt` you edit each morning and lays the tasks out as a
   numbered agenda, with `x `-prefixed lines struck through.
 - Draws a full month calendar with today highlighted.
-- Shows one rotating quote — 50/50 **dev** or **stoic** — that changes on every run.
+- Shows one rotating quote (50/50 **dev** or **stoic**) that changes on every run.
 - Fills the art panels with a random wallpaper each run.
 - Renders it all to a 1920×1080 PNG and sets it on the laptop panel, leaving any
   external monitor free to keep cycling.
@@ -32,8 +32,8 @@ google-chrome-stable --headless=new --hide-scrollbars \
   --screenshot=out.png "file://poster.html"
 ```
 
-Going through HTML/CSS instead of an image-drawing library means real layout — grid,
-flexbox, web fonts, clip-paths — for a fraction of the effort. `--virtual-time-budget`
+Going through HTML/CSS instead of an image-drawing library means real layout (grid,
+flexbox, web fonts, clip-paths) for a fraction of the effort. `--virtual-time-budget`
 waits for images to load so cold-boot renders aren't blank.
 
 ### The quote system
