@@ -1,7 +1,7 @@
 # daily-agenda-wallpaper
 
 A self-updating desktop wallpaper that renders **today's tasks, a live quote, and a
-month calendar** as a designed poster, regenerated at login and every 30 minutes.
+month calendar** as a designed poster, regenerated at login and every 10 minutes.
 
 ![Rendered daily-agenda poster](docs/demo.png)
 
@@ -69,10 +69,10 @@ ln -sf "$PWD/task-wallpaper" ~/.local/bin/task-wallpaper
 task-wallpaper                                     # render + set once
 ```
 
-To run it at login and refresh every 30 minutes, add to `hyprland.conf`:
+To run it at login and refresh every 10 minutes, add to `hyprland.conf`:
 
 ```
-exec-once = bash -c 'while :; do ~/.local/bin/task-wallpaper >/dev/null 2>&1; sleep 1800; done'
+exec-once = bash -c 'while :; do ~/.local/bin/task-wallpaper >/dev/null 2>&1; sleep 600; done'
 ```
 
 ## Config
