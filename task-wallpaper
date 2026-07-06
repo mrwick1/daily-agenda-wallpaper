@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+# ============================================
+# TASK WALLPAPER — renders today's tasks as a ZZZ-style
+# poster PNG and sets it on the laptop panel (eDP-1).
+# Art panels rotate to random anime wallpapers each run.
+# Run at boot (hyprland exec-once) or manually after editing tasks.
+# ============================================
+set -u
+
+TASKS_FILE="${TASKS_FILE:-$HOME/today-tasks.txt}"
+WALL_DIR="${TASK_WALL_DIR:-$HOME/Pictures/wallpapers/anime}"
+CACHE="$HOME/.cache/wallpaper-engine"
+HTML="$CACHE/today-poster.html"
+OUT="$CACHE/today-poster.png"
+MONITOR="${TASK_MONITOR:-eDP-1}"
+CHROME_PROFILE="$CACHE/chrome-headless"   # isolated: won't touch your real Chrome
+mkdir -p "$CACHE"
+
+# --- date pieces ---
+DAY=$(date +%d)              # 06
+MONTH=$(date +%b)            # Jul
+WEEKDAY=$(date +%A | tr '[:lower:]' '[:upper:]')  # MONDAY
+YEAR=$(date +%Y)             # 2026
+MONTHNUM=$(date +%m)         # 07
+TODAY_INT=$(date +%-d)       # 6  (no pad, for JS compare)
+MONTHNUM_INT=$(date +%-m)    # 7
+
+# --- tasks -> html rows ---
+TASKS_HTML=""
+n=0
+if [[ -f "$TASKS_FILE" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "${line// }" ]] && continue
+    [[ "$line" == \#* ]] && continue
+    done_cls=""
+    if [[ "$line" =~ ^[xX][[:space:]]+ ]]; then done_cls=" done"; line="${line#* }"; fi
+    esc=$(printf '%s' "$line" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+    n=$((n+1))
+    TASKS_HTML+="      <div class=\"task${done_cls}\"><span class=\"num\">${n}</span>${esc}</div>"$'\n'
+    [[ $n -ge 8 ]] && break
+  done < "$TASKS_FILE"
+fi
+[[ $n -eq 0 ]] && TASKS_HTML='      <div class="task"><span class="num">-</span>No tasks set for today</div>'
+
+# --- random art (rotates each run) ---
+mapfile -t IMGS < <(find "$WALL_DIR" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | shuf | head -3)
+IMG1="${IMGS[0]:-}"; IMG2="${IMGS[1]:-$IMG1}"; IMG3="${IMGS[2]:-$IMG1}"
+
+# --- motivational quote: 50/50 stoic (fetched live, file fallback) or dev (local file) ---
+# Rotates on every run (see the 30-min refresh loop in hyprland.conf).
+SELF="$(readlink -f "$0")"; PROJ_DIR="$(dirname "$SELF")"
+QCAT=""; QLINE=""
+if (( RANDOM % 2 == 0 )); then
+  QCAT="STOIC"
+  STOIC_CACHE="$CACHE/stoic-cache.txt"
+  QLINE=$(curl -fsS --max-time 5 https://stoic.tekloon.net/stoic-quote 2>/dev/null \
+          | jq -r '.data | "\(.quote)|\(.author)"' 2>/dev/null)
+  QTEXT_PART="${QLINE%%|*}"
+  # quality gate: reject tweet junk (@handles, fragments, mid-sentence starts, over/undersized)
+  if [[ -n "$QLINE" && "$QLINE" != *"null"* && "$QLINE" == *"|"* && "$QLINE" != *"@"* \
+        && ${#QLINE} -le 160 && ${#QTEXT_PART} -ge 25 && "$QTEXT_PART" =~ ^[A-Z] ]]; then
+    # valid fetch -> grow the local cache (dedup)
+    grep -qxF "$QLINE" "$STOIC_CACHE" 2>/dev/null || printf '%s\n' "$QLINE" >> "$STOIC_CACHE"
+  else
+    # offline/invalid -> prefer accumulated cache, then bundled file
+    QLINE=$(shuf -n1 "$STOIC_CACHE" 2>/dev/null)
+    [[ -z "${QLINE// }" ]] && QLINE=$(shuf -n1 "$PROJ_DIR/quotes-stoic.txt" 2>/dev/null)
+  fi
+else
+  QCAT="// DEV"
+  QLINE=$(shuf -n1 "$PROJ_DIR/quotes-dev.txt" 2>/dev/null)
+fi
+[[ -z "${QLINE// }" || "$QLINE" != *"|"* ]] && QLINE="Make it work, make it right, make it fast.|Kent Beck"
+QTXT=$(printf '%s' "${QLINE%%|*}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+QBY=$(printf '%s' "${QLINE##*|}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+
+cat > "$HTML" <<EOF
+<!doctype html><html><head><meta charset="utf-8"><style>
+  :root{ --blue:#2f68f6; --blue2:#5c8bff; --paper:#d9dbe0; --paper2:#c9ccd3;
+    --ink:#14161c; --ink2:#20242e; --line:#9aa0ab; }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:1920px;height:1080px;overflow:hidden;}
+  body{font-family:'JetBrainsMono Nerd Font','JetBrainsMono NF',monospace;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.02) 0 2px,transparent 2px 4px),
+      linear-gradient(135deg,var(--paper) 0%,var(--paper2) 100%);
+    color:var(--ink);position:relative;}
+  .grain{position:absolute;inset:0;background-image:radial-gradient(rgba(0,0,0,.05) 1px,transparent 1.4px);
+    background-size:7px 7px;pointer-events:none;}
+  .stage{position:absolute;inset:40px;display:grid;grid-template-columns:1.15fr 0.85fr;
+    grid-template-rows:1fr 200px;gap:26px;overflow:hidden;}
+  .left{display:flex;flex-direction:column;gap:18px;min-width:0;min-height:0;position:relative;}
+  .brandrow{display:flex;align-items:center;gap:16px;}
+  .badge{background:var(--ink);color:#fff;font-weight:800;font-size:15px;letter-spacing:2px;
+    padding:7px 12px;clip-path:polygon(0 0,100% 0,100% 70%,92% 100%,0 100%);}
+  .badge b{color:var(--blue2);}
+  .kicker{font-size:14px;letter-spacing:6px;font-weight:700;color:var(--ink2);}
+  .datewrap{display:flex;align-items:flex-end;gap:24px;margin-top:4px;}
+  .bigday{font-size:230px;line-height:.78;font-weight:800;font-style:italic;letter-spacing:-8px;
+    color:var(--ink);position:relative;}
+  .bigday::after{content:"";position:absolute;left:6px;bottom:26px;width:220px;height:14px;
+    background:var(--blue);transform:skewX(-12deg);z-index:-1;opacity:.9;}
+  .monthcol{display:flex;flex-direction:column;gap:6px;padding-bottom:30px;}
+  .month{font-size:52px;font-weight:800;font-style:italic;color:var(--blue);letter-spacing:1px;}
+  .weekday{font-size:22px;font-weight:700;letter-spacing:4px;}
+  .yr{font-size:15px;letter-spacing:4px;color:var(--ink2);}
+  .taskhead{display:flex;align-items:center;gap:12px;margin-top:2px;}
+  .taskhead .bar{height:3px;flex:1;background:var(--ink);}
+  .taskhead span{font-size:16px;font-weight:800;letter-spacing:5px;}
+  .tasks{display:flex;flex-direction:column;gap:11px;margin-top:4px;}
+  .task{display:flex;align-items:center;gap:16px;font-size:26px;font-weight:600;color:var(--ink2);}
+  .num{font-size:14px;font-weight:800;color:#fff;background:var(--blue);width:30px;height:30px;
+    display:grid;place-items:center;clip-path:polygon(0 0,100% 0,100% 100%,15% 100%);flex:none;}
+  .task.done{color:var(--line);text-decoration:line-through;text-decoration-color:var(--blue2);}
+  .task.done .num{background:var(--line);}
+  /* tasks sit ABOVE the quote watermark so they stay readable when they overlap it */
+  .taskhead,.tasks{position:relative;z-index:1;}
+  /* tasks punch a paper-colored halo so they stay crisp where they overlap the quote */
+  .task{text-shadow:0 0 8px var(--paper),0 0 8px var(--paper),0 0 4px var(--paper);}
+  /* quote: legible but secondary, pinned to the bottom-left, sitting behind the tasks */
+  .quote{position:absolute;left:2px;right:6%;bottom:2px;z-index:0;}
+  .quote .tag{display:inline-block;background:var(--blue);color:#fff;
+    font-size:11px;font-weight:800;letter-spacing:3px;padding:4px 11px;
+    clip-path:polygon(0 0,100% 0,100% 100%,9% 100%);}
+  .quote .txt{font-size:26px;font-style:italic;font-weight:600;color:#697184;line-height:1.4;margin-top:10px;}
+  .quote .by{font-size:13px;letter-spacing:3px;font-weight:800;color:#899;
+    margin-top:10px;text-transform:uppercase;}
+  .art{position:relative;display:grid;grid-template-rows:1.4fr 1fr;grid-template-columns:1fr 1fr;
+    gap:14px;min-width:0;min-height:0;}
+  .panel{position:relative;overflow:hidden;min-width:0;min-height:0;background:var(--blue);border:3px solid var(--ink);}
+  .panel img{width:100%;height:100%;object-fit:cover;filter:grayscale(.15) contrast(1.05);
+    mix-blend-mode:luminosity;}
+  .panel.big{grid-column:1 / span 2;}
+  .panel::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(180deg,transparent 55%,rgba(47,104,246,.35));mix-blend-mode:multiply;}
+  .zzz{position:absolute;right:14px;bottom:12px;font-size:13px;font-weight:800;letter-spacing:3px;
+    color:#fff;opacity:.85;z-index:2;}
+  .calbar{grid-column:1 / span 2;background:var(--ink);color:#e8eaf0;display:flex;align-items:center;
+    padding:0 34px 0 104px;gap:34px;clip-path:polygon(0 0,100% 0,100% 100%,0 100%);position:relative;}
+  .calbar::before{content:"";position:absolute;left:0;top:0;width:70px;height:100%;background:var(--blue);
+    clip-path:polygon(0 0,100% 0,55% 100%,0 100%);opacity:.9;}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px 26px;flex:1;z-index:1;}
+  .dow{font-size:12px;font-weight:800;letter-spacing:2px;color:#8b93a6;text-align:center;}
+  .dow.we{color:var(--blue2);}
+  .cell{font-size:19px;font-weight:700;text-align:center;color:#cfd4e0;padding:2px 0;}
+  .cell.we{color:var(--blue2);}
+  .cell.pad{color:#3a3f4d;}
+  .cell.today{background:var(--blue);color:#fff;border-radius:6px;box-shadow:0 0 0 3px rgba(92,139,255,.4);}
+  .brand{display:flex;flex-direction:column;align-items:flex-end;gap:4px;z-index:1;}
+  .brand .big{font-size:40px;font-weight:800;font-style:italic;letter-spacing:1px;}
+  .brand .big i{color:var(--blue2);}
+  .brand .sub{font-size:13px;letter-spacing:3px;color:#8b93a6;}
+</style></head><body>
+<div class="grain"></div>
+<div class="stage">
+  <div class="left">
+    <div class="brandrow">
+      <div class="badge">TASKS<b>//</b>${MONTHNUM}</div>
+      <div class="kicker">DAILY&nbsp;&nbsp;AGENDA</div>
+    </div>
+    <div class="datewrap">
+      <div class="bigday">${DAY}</div>
+      <div class="monthcol">
+        <div class="month">${MONTH}.</div>
+        <div class="weekday">${WEEKDAY}</div>
+        <div class="yr">[ ${YEAR} ]</div>
+      </div>
+    </div>
+    <div class="taskhead"><span>TODAY</span><div class="bar"></div></div>
+    <div class="tasks">
+${TASKS_HTML}    </div>
+    <div class="quote">
+      <div class="txt">“${QTXT}”</div>
+      <div class="by">— ${QBY}</div>
+    </div>
+  </div>
+  <div class="art">
+    <div class="panel big"><img src="file://${IMG1}"><div class="zzz">ZZZ // 001</div></div>
+    <div class="panel"><img src="file://${IMG2}"></div>
+    <div class="panel"><img src="file://${IMG3}"></div>
+  </div>
+  <div class="calbar">
+    <div class="cal" id="cal"></div>
+    <div class="brand">
+      <div class="big">MONTH<i>${MONTHNUM}</i></div>
+      <div class="sub">${MONTH} [ ${YEAR} ]</div>
+    </div>
+  </div>
+</div>
+<script>
+  var cal=document.getElementById('cal');
+  var dows=['MON','TUE','WED','THU','FRI','SAT','SUN'];
+  dows.forEach(function(d,i){var e=document.createElement('div');e.className='dow'+((i>4)?' we':'');e.textContent=d;cal.appendChild(e);});
+  var Y=${YEAR}, M=${MONTHNUM_INT}, TODAY=${TODAY_INT};
+  var firstMon=(new Date(Y,M-1,1).getDay()+6)%7;
+  var dim=new Date(Y,M,0).getDate();
+  for(var i=0;i<firstMon;i++){var e=document.createElement('div');e.className='cell pad';cal.appendChild(e);}
+  for(var d=1;d<=dim;d++){var col=(firstMon+d-1)%7;var e=document.createElement('div');
+    e.className='cell'+((col>4)?' we':'')+((d===TODAY)?' today':'');
+    e.textContent=(d<10?'0':'')+d;cal.appendChild(e);}
+</script></body></html>
+EOF
+
+# --- render to PNG (isolated profile so it can't disturb a running Chrome) ---
+google-chrome-stable --headless=new --no-sandbox --hide-scrollbars \
+  --force-device-scale-factor=1 --window-size=1920,1080 \
+  --user-data-dir="$CHROME_PROFILE" --allow-file-access-from-files \
+  --virtual-time-budget=4000 --run-all-compositor-stages-before-draw \
+  --screenshot="$OUT" "file://$HTML" 2>/dev/null
+
+[[ -f "$OUT" ]] || { echo "task-wallpaper: render failed" >&2; exit 1; }
+
+# --- set it on the laptop panel ---
+"$HOME/.local/bin/wallpaper-engine" set-monitor "$MONITOR" "$OUT" >/dev/null 2>&1
+echo "task-wallpaper: set $OUT on $MONITOR (${n} tasks)"

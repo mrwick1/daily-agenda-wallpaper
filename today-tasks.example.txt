@@ -1,0 +1,10 @@
+# Copy this to ~/today-tasks.txt and edit each morning.
+# One task per line. Blank lines and #-comments are ignored.
+# Prefix a line with "x " to mark it done (struck through). First 8 shown.
+
+Ship auth refactor PR
+Fix flaky checkout test
+Write RFC for caching layer
+x Standup 9:30
+Review design tokens
+Gym 6pm

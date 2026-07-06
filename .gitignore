@@ -1,0 +1,4 @@
+# personal task list lives in $HOME, never commit a real one
+today-tasks.txt
+*.swp
+.DS_Store
